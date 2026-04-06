@@ -1,50 +1,72 @@
-import argparse
 import torch
-from torch.utils.data import DataLoader, Subset
+import torchvision
+import torchvision.transforms as transforms
+from model import get_resnet8_modified, get_resnet56_modified
+from client import FLClient
+from server import FLServer
+from dlg import dlg_attack
+from utils import get_args, visualize_results
 
-from server import FederatedServer
-from client import FederatedClient
-from dlg_attack import run_dlg
-from utils import get_data, save_image
-from models import get_mobilenet_v2
+def get_cifar100_data(index=0):
+    """CIFAR-100 데이터셋을 다운로드하고 특정 인덱스의 이미지를 반환합니다."""
+    transform = transforms.Compose([
+        transforms.ToTensor(), # 이미지를 0~1 사이의 텐서로 변환
+    ])
+    
+    # 논문에서 사용한 CIFAR-100 데이터셋 로드
+    dataset = torchvision.datasets.CIFAR100(root='./data', train=True, download=True, transform=transform)
+    img, label = dataset[index]
+    
+    # 배치 차원 추가: (1, 3, 32, 32)
+    return img.unsqueeze(0), torch.tensor([label])
 
 def main():
-    parser = argparse.ArgumentParser(description="Federated Learning with Compression and DLG Attack")
-    parser.add_argument('--compress', type=str, default='none', 
-                        choices=['none', 'quant', 'sparse'], 
-                        help="Gradient 압축 방식: 'none'(원본), 'quant'(8비트 양자화), 'sparse'(Top-10% 희소화)")
-    args = parser.parse_args()
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"===== 실험 모드: [{args.compress.upper()}] | 디바이스: {device} =====")
-
-    # 1. 환경 및 데이터 초기화
-    server = FederatedServer()
-    dataset = get_data("CIFAR10")
+    args = get_args()
+    print(f"--- Federated Learning Simulation Started ---")
+    print(f"Compression Method: {args.compression}")
     
-    # DLG 타겟을 명확히 하기 위해 데이터 1개(인덱스 0)만 사용하는 클라이언트 구성
-    client_loader = DataLoader(Subset(dataset, [0]), batch_size=1)
-    client = FederatedClient(client_id=1, train_loader=client_loader)
-
-    # 2. 연합학습(FL) 시뮬레이션
-    global_weights = server.get_global_weights()
-    local_weights, compressed_grads = client.update_local_model(global_weights, compress_mode=args.compress)
-    server.aggregate_weights([local_weights])
-
-    # 3. DLG 공격 시뮬레이션
-    # 공격자는 배포된 모델 가중치와 클라이언트가 보낸 Gradient를 탈취했다고 가정
-    attack_model = get_mobilenet_v2().to(device)
-    attack_model.load_state_dict(global_weights)
+    # 1. 모델 초기화 (테스트 속도를 위해 ResNet-8 사용. 논문과 동일한 깊이를 원하면 get_resnet56_modified 사용)
+    # CIFAR-100의 클래스 개수는 100개
+    model = get_resnet8_modified(num_classes=100) 
+    server = FLServer(model)
     
-    # BN(Batch Normalization) 레이어가 DLG에 미치는 영향을 고정하기 위해 eval() 사용
-    attack_model.eval() 
-
-    reconstructed_img = run_dlg(attack_model, compressed_grads, device=device)
+    # 2. 클라이언트 데이터 생성 (CIFAR-100에서 첫 번째 이미지 추출)
+    ground_truth_data, ground_truth_label = get_cifar100_data(index=15) 
+    print(f"Loaded CIFAR-100 Image. True Label: {ground_truth_label.item()}")
     
-    # 4. 결과 저장
-    result_filename = f"dlg_result_{args.compress}.png"
-    save_image(reconstructed_img, result_filename)
-    print(f"===== 실험 종료: 복원된 이미지가 '{result_filename}'에 저장되었습니다. =====")
+    # 3. 클라이언트 동작: 그래디언트 계산 및 압축하여 서버로 전송
+    client = FLClient(model, ground_truth_data, ground_truth_label)
+    compressed_grads, gt_data, gt_label = client.compute_and_send_gradients(
+        compression_method=args.compression, 
+        sparsity=args.sparsity
+    )
+    
+    # 서버가 그래디언트 수신
+    server.receive_gradients(compressed_grads)
+    print("Server received gradients from the client.")
+    
+    # 4. 악의적인 공격자(서버 스니핑 등)가 DLG 공격을 통해 데이터 복원 시도
+    target_grads = server.get_received_gradients()
+    recovered_data, recovered_label = dlg_attack(
+        model=model, 
+        target_gradients=target_grads, 
+        data_shape=(1, 3, 32, 32), 
+        num_classes=100,  # CIFAR-100은 클래스가 100개이므로 변경
+        num_iterations=300
+    )
+    
+    # 5. 결과 평가 및 시각화
+    mse = torch.mean((recovered_data - gt_data) ** 2).item()
+    print("\n--- Attack Results ---")
+    print(f"Recovered Label: {recovered_label.item()} (Ground Truth: {gt_label.item()})")
+    print(f"MSE between Original and Recovered Image: {mse:.6f}")
+    
+    # 압축 방식에 따른 시각화 제목 설정
+    title = f"DLG Attack on CIFAR-100 (Compression: {args.compression.capitalize()})"
+    if args.compression == 'sparsification':
+        title += f" | Sparsity: {args.sparsity}"
+        
+    visualize_results(gt_data, recovered_data, title=title)
 
 if __name__ == "__main__":
     main()

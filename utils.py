@@ -1,44 +1,58 @@
+import argparse
 import torch
-from torchvision import datasets, transforms
 import matplotlib.pyplot as plt
 
-def get_data(dataset_name="CIFAR10"):
-    transform = transforms.Compose([
-        transforms.Resize((32, 32)),
-        transforms.ToTensor(),
-    ])
-    if dataset_name == "CIFAR10":
-        train_ds = datasets.CIFAR10('./data', train=True, download=True, transform=transform)
-    return train_ds
+def get_args():
+    parser = argparse.ArgumentParser(description="Federated Learning with Compression and DLG Attack")
+    parser.add_argument('--compression', type=str, default='none', 
+                        choices=['none', 'sparsification', 'quantization'],
+                        help="Choose gradient compression method (none, sparsification, quantization)")
+    parser.add_argument('--sparsity', type=float, default=0.2, 
+                        help="Sparsity ratio for sparsification (e.g., 0.2 means prune bottom 20%)")
+    return parser.parse_args()
 
-def cross_entropy_for_onehot(inputs, targets):
-    return torch.mean(torch.sum(-targets * torch.log_softmax(inputs, dim=-1), dim=-1))
-
-def apply_compression(tensor, mode='none'):
-    if mode == 'quant':
-        # 8-bit 양자화 (Min-Max)
-        min_val, max_val = tensor.min(), tensor.max()
-        scale = (max_val - min_val) / 255.0
-        scale = torch.clamp(scale, min=1e-8)
-        quantized = torch.round((tensor - min_val) / scale)
-        dequantized = (quantized * scale) + min_val
-        return dequantized
+def compress_gradients(gradients, method, sparsity=0.2):
+    compressed_grads = []
+    if method == 'none':
+        return gradients
         
-    elif mode == 'sparse':
-        # Top-10% 희소화 (나머지는 0으로 마스킹)
-        k = max(1, int(tensor.numel() * 0.1))
-        values, indices = torch.topk(torch.abs(tensor.view(-1)), k)
-        mask = torch.zeros_like(tensor.view(-1))
-        mask[indices] = 1.0
-        return (tensor.view(-1) * mask).view(tensor.shape)
-        
-    return tensor
+    elif method == 'sparsification':
+        for g in gradients:
+            if g is None:
+                compressed_grads.append(None)
+                continue
+            threshold = torch.quantile(torch.abs(g), sparsity)
+            mask = torch.abs(g) >= threshold
+            compressed_grads.append(g * mask)
+            
+    elif method == 'quantization':
+        for g in gradients:
+            if g is None:
+                compressed_grads.append(None)
+                continue
+            compressed_grads.append(g.half().float())
+            
+    return compressed_grads
 
-def save_image(tensor, path):
-    # DLG 결과 텐서 (1, 3, H, W)를 이미지로 저장
-    img = tensor[0].detach().cpu().permute(1, 2, 0)
-    img = (img - img.min()) / (img.max() - img.min()) # 0~1 정규화
-    plt.imshow(img.numpy())
-    plt.axis('off')
-    plt.savefig(path, bbox_inches='tight')
-    plt.close()
+def visualize_results(original_data, recovered_data, title="DLG Attack Result"):
+    """원본 이미지와 복원된 이미지를 비교하여 시각화합니다."""
+    # 텐서를 numpy 배열로 변환 (1, 3, 32, 32) -> (32, 32, 3)
+    orig_img = original_data[0].detach().cpu().permute(1, 2, 0).numpy()
+    recv_img = recovered_data[0].detach().cpu().permute(1, 2, 0).numpy()
+
+    # 화면 출력을 위해 [0, 1] 범위로 정규화
+    orig_img = (orig_img - orig_img.min()) / (orig_img.max() - orig_img.min() + 1e-8)
+    recv_img = (recv_img - recv_img.min()) / (recv_img.max() - recv_img.min() + 1e-8)
+
+    fig, axes = plt.subplots(1, 2, figsize=(10, 5))
+    axes[0].imshow(orig_img)
+    axes[0].set_title("Ground Truth (Original)")
+    axes[0].axis("off")
+
+    axes[1].imshow(recv_img)
+    axes[1].set_title("Recovered Image (DLG)")
+    axes[1].axis("off")
+
+    plt.suptitle(title)
+    plt.tight_layout()
+    plt.show()

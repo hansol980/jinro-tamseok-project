@@ -1,36 +1,25 @@
 import torch
-import torch.nn as nn
-from models import get_mobilenet_v2
-from utils import apply_compression
+import torch.nn.functional as F
+from utils import compress_gradients
 
-class FederatedClient:
-    def __init__(self, client_id, train_loader):
-        self.client_id = client_id
-        self.train_loader = train_loader
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model = get_mobilenet_v2().to(self.device)
-        self.criterion = nn.CrossEntropyLoss()
+class FLClient:
+    def __init__(self, model, data, label):
+        self.model = model
+        self.data = data
+        self.label = label
 
-    def update_local_model(self, global_weights, compress_mode='none'):
-        self.model.load_state_dict(global_weights)
-        self.model.eval() 
+    def compute_and_send_gradients(self, compression_method, sparsity):
+        self.model.zero_grad()
         
-        optimizer = torch.optim.SGD(self.model.parameters(), lr=0.01)
-        
-        # DLG 실험을 위해 첫 번째 배치(1개 이미지)만 학습
-        images, labels = next(iter(self.train_loader))
-        images, labels = images.to(self.device), labels.to(self.device)
-        
-        optimizer.zero_grad()
-        outputs = self.model(images)
-        loss = self.criterion(outputs, labels)
+        # 로컬 데이터로 그래디언트 계산
+        output = self.model(self.data)
+        loss = F.cross_entropy(output, self.label)
         loss.backward()
         
-        # Gradient 추출 및 압축 적용 (양자화/희소화)
-        raw_grads = [p.grad.detach().clone() for p in self.model.parameters()]
-        compressed_grads = [apply_compression(g, mode=compress_mode) for g in raw_grads]
+        # 모델의 파라미터 그래디언트 추출
+        original_grads = [param.grad.clone() for param in self.model.parameters()]
         
-        optimizer.step()
-        print(f"클라이언트 {self.client_id}: 학습 및 Gradient 압축({compress_mode}) 완료.")
+        # 설정된 압축 방식 적용
+        compressed_grads = compress_gradients(original_grads, method=compression_method, sparsity=sparsity)
         
-        return self.model.state_dict(), compressed_grads
+        return compressed_grads, self.data, self.label # 시뮬레이션을 위해 원본 데이터도 반환 (실제로는 반환 안함)
