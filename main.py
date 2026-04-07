@@ -1,11 +1,23 @@
 import torch
 import torchvision
 import torchvision.transforms as transforms
+import random
+import numpy as np
 from model import get_resnet8_modified, get_resnet56_modified
 from client import FLClient
 from server import FLServer
 from dlg import dlg_attack
 from utils import get_args, visualize_results
+
+def set_seed(seed=42):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 def get_cifar100_data(index=0):
     transform = transforms.Compose([
@@ -16,6 +28,7 @@ def get_cifar100_data(index=0):
     return img.unsqueeze(0), torch.tensor([label])
 
 def main():
+    set_seed(42)
     args = get_args()
     print(f"--- Federated Learning Simulation Started ---")
     print(f"Compression Method: {args.compression}\n")
