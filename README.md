@@ -25,6 +25,10 @@ python main.py --compression sparsification --sparsity 0.2
 ```bash
 python main.py --compression quantization
 ```
+3. **글로벌 가지치기 (Pruning)**: DLG 논문에서 시도한 데이터 방어 기법으로, 각 레이어 텐서별로 잘라내는 대신 모델 전체의 그래디언트를 기준으로 하위 비율(기본 20%)을 삭제하여 노이즈를 줍니다.
+```bash
+python main.py --compression pruning --sparsity 0.2
+```
 
 ---
 
@@ -84,5 +88,6 @@ python main.py --compression quantization
 | **희소화 (Sparsification)** | 0.5 (하위 50% 제거) | `0.004556` | 누락된 정보의 양이 절반으로 늘어남에 따라 복원된 이미지의 에러율(MSE)이 점차 높아지기 시작합니다. |
 | **희소화 (Sparsification)** | 0.8 (하위 80% 제거) | `0.020688` | 대다수의 파라미터 업데이트가 제거되는 경우 복원 오차가 두드러지게 급상승하며, 데이터 방어 체계로서 어느 정도 유효함을 나타냅니다. |
 | **양자화 (Quantization)** | 모델 `FP32` $\rightarrow$ `FP16` | `0.002249` | 그래디언트의 단순 정밀도만 절반으로 줄여도 이미지 형상 복원에 필요한 주요 방향 정보는 남아있어 여전히 유출 위험이 존재합니다. |
+| **가지치기 (Pruning)** | 0.2 (전체 파라미터 기준 하위 20% 마스킹) | `0.002428` | 텐서별 독립적 삭제가 아닌 글로벌 단위의 방어 기법(DLG 논문 방식)을 적용했을 때의 오차율입니다. |
 
 > **💡 시사점**: 단순한 압축 기법만으로는 데이터 유출을 막기에 역부족일 수 있으며, 공격 방어를 위해서는 80% 이상의 극단적인 희소화나 추가적인 차분 프라이버시(Differential Privacy) 노이즈 적용이 요구됩니다.

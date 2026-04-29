@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as F
 from utils import compress_gradients
+from pruning import apply_gradient_pruning
 
 class FLClient:
     def __init__(self, model, data, label):

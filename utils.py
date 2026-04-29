@@ -1,12 +1,13 @@
 import argparse
 import torch
 import matplotlib.pyplot as plt
+from pruning import apply_gradient_pruning
 
 def get_args():
     parser = argparse.ArgumentParser(description="Federated Learning with Compression and DLG Attack")
     parser.add_argument('--compression', type=str, default='none', 
-                        choices=['none', 'sparsification', 'quantization'],
-                        help="Choose gradient compression method (none, sparsification, quantization)")
+                        choices=['none', 'sparsification', 'quantization', 'pruning'],
+                        help="Choose gradient compression method (none, sparsification, quantization, pruning)")
     parser.add_argument('--sparsity', type=float, default=0.2, 
                         help="Sparsity ratio for sparsification (e.g., 0.2 means prune bottom 20%)")
     return parser.parse_args()
@@ -31,6 +32,19 @@ def compress_gradients(gradients, method, sparsity=0.2):
                 compressed_grads.append(None)
                 continue
             compressed_grads.append(g.half().float())
+
+    # DLG 논문의 기본 방어 기법인 pruning(가지치기) 적용
+    elif method == 'pruning':
+        valid_grads = [g for g in gradients if g is not None]
+        pruned_valid = apply_gradient_pruning(valid_grads, sparsity)
+        
+        pruned_idx = 0
+        for g in gradients:
+            if g is None:
+                compressed_grads.append(None)
+            else:
+                compressed_grads.append(pruned_valid[pruned_idx])
+                pruned_idx += 1
             
     return compressed_grads
 
