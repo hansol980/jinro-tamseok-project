@@ -29,6 +29,10 @@ python main.py --compression quantization
 ```bash
 python main.py --compression pruning --sparsity 0.2
 ```
+4. **Soteria 방어 (Soteria)**: 특정 레이어(주로 마지막 FC 레이어)의 입력 특징(Representation) 중요도를 분석하여, 데이터 유출에 큰 영향을 미치는 기울기만을 선택적으로 0으로 만듭니다.
+```bash
+python main.py --compression soteria --sparsity 0.2
+```
 
 ---
 
@@ -89,5 +93,6 @@ python main.py --compression pruning --sparsity 0.2
 | **희소화 (Sparsification)** | 0.8 (하위 80% 제거) | `0.020688` | 대다수의 파라미터 업데이트가 제거되는 경우 복원 오차가 두드러지게 급상승하며, 데이터 방어 체계로서 어느 정도 유효함을 나타냅니다. |
 | **양자화 (Quantization)** | 모델 `FP32` $\rightarrow$ `FP16` | `0.002249` | 그래디언트의 단순 정밀도만 절반으로 줄여도 이미지 형상 복원에 필요한 주요 방향 정보는 남아있어 여전히 유출 위험이 존재합니다. |
 | **가지치기 (Pruning)** | 0.2 (전체 파라미터 기준 하위 20% 마스킹) | `0.002428` | 텐서별 독립적 삭제가 아닌 글로벌 단위의 방어 기법(DLG 논문 방식)을 적용했을 때의 오차율입니다. |
+| **소테리아 (Soteria)** | 0.2 (표현값 기준 20% 노드 기울기 마스킹) | `0.002606` | 특징(Representation)의 중요도를 기반으로 방어하는 Soteria 기법을 적용한 결과로, 단순 가지치기보다 복원 오차가 약간 상승했으나 20% 비율로는 여전히 형태 유추가 가능합니다. |
 
 > **💡 시사점**: 단순한 압축 기법만으로는 데이터 유출을 막기에 역부족일 수 있으며, 공격 방어를 위해서는 80% 이상의 극단적인 희소화나 추가적인 차분 프라이버시(Differential Privacy) 노이즈 적용이 요구됩니다.

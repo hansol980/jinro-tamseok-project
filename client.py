@@ -2,6 +2,7 @@ import torch
 import torch.nn.functional as F
 from utils import compress_gradients
 from pruning import apply_gradient_pruning
+from soteria import apply_soteria_defense
 
 class FLClient:
     def __init__(self, model, data, label):
@@ -16,6 +17,9 @@ class FLClient:
         output = self.model(self.data)
         loss = F.cross_entropy(output, self.label)
         loss.backward()
+        
+        if compression_method == 'soteria':
+            apply_soteria_defense(self.model, self.data, defended_layer_name="linear", prune_rate=sparsity)
         
         # 모델의 파라미터 그래디언트 추출
         original_grads = [param.grad.clone() for param in self.model.parameters()]

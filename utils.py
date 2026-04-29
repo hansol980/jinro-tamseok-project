@@ -6,15 +6,16 @@ from pruning import apply_gradient_pruning
 def get_args():
     parser = argparse.ArgumentParser(description="Federated Learning with Compression and DLG Attack")
     parser.add_argument('--compression', type=str, default='none', 
-                        choices=['none', 'sparsification', 'quantization', 'pruning'],
-                        help="Choose gradient compression method (none, sparsification, quantization, pruning)")
+                        choices=['none', 'sparsification', 'quantization', 'pruning', 'soteria'],
+                        help="Choose gradient compression method (none, sparsification, quantization, pruning, soteria)")
     parser.add_argument('--sparsity', type=float, default=0.2, 
                         help="Sparsity ratio for sparsification (e.g., 0.2 means prune bottom 20%)")
     return parser.parse_args()
 
 def compress_gradients(gradients, method, sparsity=0.2):
     compressed_grads = []
-    if method == 'none':
+    # soteria는 이미 client.py에서 그래디언트에 직접(in-place) 적용되었으므로 그대로 반환합니다.
+    if method == 'none' or method == 'soteria':
         return gradients
         
     elif method == 'sparsification':
