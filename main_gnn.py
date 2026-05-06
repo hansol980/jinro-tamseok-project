@@ -14,6 +14,8 @@ def main(args):
     print("=== Federated Learning & DLG Attack with FedLoGModel ===")
     if args.defense:
         print("[!] Defense Mechanisms (Data Condensation, Feature Scaling, Class Noise) ENABLED")
+        if args.adaptive_attack:
+            print("[!] ADAPTIVE ATTACK ENABLED: Server will jointly optimize dummy_x and dummy_scale!")
     else:
         print("[!] Defense Mechanisms DISABLED (Baseline Vulnerability)")
     
@@ -115,11 +117,15 @@ def main(args):
     # 6. Malicious Server runs DLG Attack
     print("\n[Malicious Server Intercepts Gradients]")
     if args.defense:
-        print(">> Server DOES NOT know the client's secret Feature Scaling factor.")
-        print(">> Server attempts DLG attack using the standard model scale (1.0).")
-        model.feature_scale = 1.0 # Server assumes scale is 1.0
+        if args.adaptive_attack:
+            print(">> Server DOES NOT know the client's secret Feature Scaling factor.")
+            print(">> Server initiates ADAPTIVE DLG attack to jointly optimize Dummy Features & Secret Scale!")
+        else:
+            print(">> Server DOES NOT know the client's secret Feature Scaling factor.")
+            print(">> Server attempts DLG attack using the standard model scale (1.0).")
+        model.feature_scale = 1.0 # Server initial assumption
         
-    recovered_feature, mse, cosine_sim = dlg_attack_gnn(
+    recovered_feature, best_dummy_scale, mse, cosine_sim = dlg_attack_gnn(
         model=model,
         target_gradients=target_gradients,
         data=attack_data,
@@ -127,11 +133,15 @@ def main(args):
         true_label=target_label,
         num_iterations=200,
         attack_lr=0.05,
-        num_restarts=3
+        num_restarts=3,
+        optimize_scale=args.adaptive_attack
     )
     
     print("\n=== Attack Results ===")
     print(f"Target Label: {target_label}")
+    if args.adaptive_attack and args.defense:
+        print(f"True Secret Scale: {secret_scale:.6f}")
+        print(f"Optimized (Stolen) Scale: {best_dummy_scale.item():.6f}")
     print(f"Recovered Feature MSE: {mse:.6f}")
     print(f"Recovered Feature Cosine Similarity: {cosine_sim:.6f} (Closer to 1 is better)")
     print("Done!")
@@ -139,5 +149,6 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="FedLoG Federated Learning & DLG Simulation")
     parser.add_argument('--defense', action='store_true', help='Enable FedLoG defense mechanisms (Feature Scaling & Noise)')
+    parser.add_argument('--adaptive_attack', action='store_true', help='Enable Adaptive DLG attack to jointly optimize the secret scaling factor')
     args = parser.parse_args()
     main(args)
