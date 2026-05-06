@@ -16,6 +16,7 @@ class FedLoGModel(nn.Module):
         
         self.num_classes = out_channels
         self.s = num_syn
+        self.feature_scale = 1.0  # 방어 기법(Feature Scaling)을 위한 스케일링 팩터
 
     def extract_embedding(self, x, edge_index):
         # 과적합 방지(Dropout)와 비선형성(ReLU)이 추가된 2계층 은닉망
@@ -36,8 +37,13 @@ class FedLoGModel(nn.Module):
 
         # 로컬 노드 및 합성 노드 2-Layer 깊은 다중 임베딩
         h = self.extract_embedding(x, edge_index)
-        h_syn_h = self.extract_embedding(self.syn_head, empty_edge_index)
-        h_syn_t = self.extract_embedding(self.syn_tail, empty_edge_index)
+        
+        # 특징 스케일링(Feature Scaling) 적용
+        scaled_syn_head = self.syn_head * self.feature_scale
+        scaled_syn_tail = self.syn_tail * self.feature_scale
+        
+        h_syn_h = self.extract_embedding(scaled_syn_head, empty_edge_index)
+        h_syn_t = self.extract_embedding(scaled_syn_tail, empty_edge_index)
 
         # 프로토타입 기반 거리 계산 함수 [cite: 195, 199]
         def get_logits(emb, syn_emb):

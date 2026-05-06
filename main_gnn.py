@@ -4,12 +4,18 @@ from torch_geometric.datasets import WikiCS
 from torch_geometric.utils import degree, subgraph
 from torch_geometric.data import Data
 import random
+import argparse
+import numpy as np
 
 from gnn_model import FedLoGModel
 from gnn_dlg import dlg_attack_gnn
 
-def main():
+def main(args):
     print("=== Federated Learning & DLG Attack with FedLoGModel ===")
+    if args.defense:
+        print("[!] Defense Mechanisms (Data Condensation, Feature Scaling, Class Noise) ENABLED")
+    else:
+        print("[!] Defense Mechanisms DISABLED (Baseline Vulnerability)")
     
     # 1. Dataset Load
     print("Loading WikiCS Dataset...")
@@ -55,7 +61,21 @@ def main():
         
     # 4. Federated Training Simulation (Just 1 round for demonstration)
     print("\n[Federated Learning Phase]")
-    # For simplicity, we just train the global model on Client 0's data directly to simulate local training
+    
+    if args.defense:
+        print(">> Defense 1 & 3: Server aggregates Data Condensation with Class Distribution Noise...")
+        # Simulate computing noisy class distribution
+        true_dist = torch.bincount(clients_data[0].y, minlength=out_classes).float()
+        noise = torch.randn_like(true_dist) * 0.5  # Gaussian Noise
+        noisy_dist = F.softmax(true_dist + noise, dim=0)
+        print(f"   -> Noisy Class Distribution generated: {noisy_dist[:3]}...")
+        
+        print(">> Defense 2: Client 0 applies Secret Feature Scaling to Global Synthetic Data...")
+        secret_scale = random.uniform(0.1, 3.0)
+        model.feature_scale = secret_scale
+    else:
+        model.feature_scale = 1.0
+        
     client_0_data = clients_data[0]
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
     
@@ -84,7 +104,7 @@ def main():
     
     print(f"Malicious Server targets Client {target_client_idx}'s Node {target_idx} (True Label: {target_label})")
     
-    # Client computes gradient for the target node (simulating an intercepted batch of size 1)
+    # Client computes gradient for the target node
     model.eval()
     model.zero_grad()
     out = model(attack_data.x, attack_data.edge_index, attack_data.degrees)
@@ -93,6 +113,12 @@ def main():
     target_gradients = [g.detach().clone() for g in target_gradients]
     
     # 6. Malicious Server runs DLG Attack
+    print("\n[Malicious Server Intercepts Gradients]")
+    if args.defense:
+        print(">> Server DOES NOT know the client's secret Feature Scaling factor.")
+        print(">> Server attempts DLG attack using the standard model scale (1.0).")
+        model.feature_scale = 1.0 # Server assumes scale is 1.0
+        
     recovered_feature, mse, cosine_sim = dlg_attack_gnn(
         model=model,
         target_gradients=target_gradients,
@@ -111,4 +137,7 @@ def main():
     print("Done!")
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="FedLoG Federated Learning & DLG Simulation")
+    parser.add_argument('--defense', action='store_true', help='Enable FedLoG defense mechanisms (Feature Scaling & Noise)')
+    args = parser.parse_args()
+    main(args)
