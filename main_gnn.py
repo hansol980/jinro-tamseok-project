@@ -114,6 +114,30 @@ def main(args):
     target_gradients = torch.autograd.grad(target_loss, model.parameters(), create_graph=False)
     target_gradients = [g.detach().clone() for g in target_gradients]
     
+    # 5.5 Advanced Defense Mechanisms (DP and Sparsification)
+    if args.defense_dp:
+        print("\n[🛡️ Advanced Defense: Differential Privacy]")
+        dp_noise_std = 0.05  # Gaussian Noise Standard Deviation
+        print(f">> Injecting Gaussian Noise (std={dp_noise_std}) into the gradients before transmission...")
+        target_gradients = [g + torch.randn_like(g) * dp_noise_std for g in target_gradients]
+        
+    if args.defense_sparse:
+        print("\n[🛡️ Advanced Defense: Extreme Sparsification]")
+        sparsity_ratio = 0.95
+        print(f">> Pruning {sparsity_ratio*100}% of the gradients (keeping only the top 5% magnitudes)...")
+        pruned_gradients = []
+        for g in target_gradients:
+            flat_g = g.view(-1)
+            num_drop = int(flat_g.numel() * sparsity_ratio)
+            if num_drop > 0:
+                _, drop_indices = torch.topk(torch.abs(flat_g), k=num_drop, largest=False)
+                mask = torch.ones_like(flat_g)
+                mask[drop_indices] = 0.0
+                pruned_gradients.append((flat_g * mask).view(g.shape))
+            else:
+                pruned_gradients.append(g)
+        target_gradients = pruned_gradients
+    
     # 6. Malicious Server runs DLG Attack
     print("\n[Malicious Server Intercepts Gradients]")
     if args.defense:
@@ -150,5 +174,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="FedLoG Federated Learning & DLG Simulation")
     parser.add_argument('--defense', action='store_true', help='Enable FedLoG defense mechanisms (Feature Scaling & Noise)')
     parser.add_argument('--adaptive_attack', action='store_true', help='Enable Adaptive DLG attack to jointly optimize the secret scaling factor')
+    parser.add_argument('--defense_dp', action='store_true', help='Advanced: Enable Differential Privacy Noise on gradients')
+    parser.add_argument('--defense_sparse', action='store_true', help='Advanced: Enable Extreme Sparsification on gradients')
     args = parser.parse_args()
     main(args)
