@@ -1,0 +1,20 @@
+=== baseline run 1 ===
+Recovered Feature MSE: 0.000981
+Recovered Feature Cosine Similarity: 0.997043 (Closer to 1 is better)
+=== baseline run 2 ===
+Recovered Feature MSE: 0.002943
+Recovered Feature Cosine Similarity: 0.990537 (Closer to 1 is better)
+=== baseline run 3 ===
+Recovered Feature MSE: 0.000247
+Recovered Feature Cosine Similarity: 0.999496 (Closer to 1 is better)
+=== baseline run 4 ===
+Recovered Feature MSE: 0.193773
+Recovered Feature Cosine Similarity: 0.743334 (Closer to 1 is better)
+=== baseline run 5 ===
+Recovered Feature MSE: 0.060361
+Recovered Feature Cosine Similarity: 0.518233 (Closer to 1 is better)
+=== adaptive run 1 ===
+=== adaptive run 2 ===
+=== adaptive run 3 ===
+=== adaptive run 4 ===
+=== adaptive run 5 ===

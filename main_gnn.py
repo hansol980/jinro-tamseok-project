@@ -10,8 +10,19 @@ import numpy as np
 from gnn_model import FedLoGModel
 from gnn_dlg import dlg_attack_gnn
 
+def set_seed(seed=42):
+    """재현성 확보: 모든 난수원 고정 (기존 코드의 결함 보완)."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
 def main(args):
-    print("=== Federated Learning & DLG Attack with FedLoGModel ===")
+    set_seed(args.seed)
+    print(f"=== Federated Learning & DLG Attack with FedLoGModel (seed={args.seed}) ===")
     if args.defense:
         print("[!] Defense Mechanisms (Data Condensation, Feature Scaling, Class Noise) ENABLED")
         if args.adaptive_attack:
@@ -78,21 +89,40 @@ def main(args):
     else:
         model.feature_scale = 1.0
         
-    client_0_data = clients_data[0]
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
-    
+    # 실제 다중 클라이언트 FedAvg(FedSGD): 모든 클라이언트가 그래디언트를 계산하고
+    # 서버가 평균내어 글로벌 모델을 갱신한다. (기존 코드는 클라이언트 0만 학습했음)
+    print(f">> FedAvg training across {n_clients} clients for {args.rounds} rounds...")
     model.train()
-    for epoch in range(10):
-        optimizer.zero_grad()
-        out = model(client_0_data.x, client_0_data.edge_index, client_0_data.degrees)
-        # Only compute loss on train nodes
-        train_nodes = client_0_data.train_mask.nonzero(as_tuple=True)[0]
-        if len(train_nodes) > 0:
-            loss = F.cross_entropy(out[train_nodes], client_0_data.y[train_nodes])
-            loss.backward()
-            optimizer.step()
-    
-    print("Client 0 finished local training.")
+    for rnd in range(args.rounds):
+        accum, n_used = None, 0
+        for cd in clients_data:
+            train_nodes = cd.train_mask.nonzero(as_tuple=True)[0]
+            if len(train_nodes) == 0:
+                continue
+            model.zero_grad()
+            out = model(cd.x, cd.edge_index, cd.degrees)
+            loss = F.cross_entropy(out[train_nodes], cd.y[train_nodes])
+            grads = torch.autograd.grad(loss, model.parameters())
+            if accum is None:
+                accum = [g.detach().clone() for g in grads]
+            else:
+                for a, g in zip(accum, grads):
+                    a += g.detach()
+            n_used += 1
+        if accum is not None:
+            with torch.no_grad():
+                for p, g in zip(model.parameters(), accum):
+                    p.data -= 0.01 * (g / max(1, n_used))
+
+    # 유용성(utility) 측정: 학습된 모델의 노드 분류 정확도
+    model.eval()
+    with torch.no_grad():
+        correct = total = 0
+        for cd in clients_data:
+            out = model(cd.x, cd.edge_index, cd.degrees)
+            correct += (out.argmax(dim=1) == cd.y).sum().item()
+            total += cd.y.numel()
+    print(f"FedAvg training finished. Node classification accuracy: {correct/max(1,total):.4f}")
     
     # 5. Gradient computation for DLG Attack
     print("\n[DLG Attack Phase]")
@@ -116,10 +146,17 @@ def main(args):
     
     # 5.5 Advanced Defense Mechanisms (DP and Sparsification)
     if args.defense_dp:
-        print("\n[🛡️ Advanced Defense: Differential Privacy]")
-        dp_noise_std = 0.05  # Gaussian Noise Standard Deviation
-        print(f">> Injecting Gaussian Noise (std={dp_noise_std}) into the gradients before transmission...")
-        target_gradients = [g + torch.randn_like(g) * dp_noise_std for g in target_gradients]
+        print("\n[🛡️ Advanced Defense: Differential Privacy (DP-SGD style)]")
+        # 기존 코드 결함 보완: 단순 노이즈가 아닌 (1)그래디언트 L2 클리핑으로 민감도를 C로
+        # 제한한 뒤 (2)sigma = noise_multiplier*C 의 보정 가우시안 노이즈를 주입한다.
+        clip_norm = 1.0
+        noise_multiplier = 1.0
+        total_norm = torch.sqrt(sum((g.detach() ** 2).sum() for g in target_gradients) + 1e-12)
+        scale = min(1.0, clip_norm / float(total_norm))
+        sigma = noise_multiplier * clip_norm
+        print(f">> Clipping grads to L2={clip_norm} (was {float(total_norm):.3f}), "
+              f"then adding Gaussian noise sigma={sigma}...")
+        target_gradients = [g * scale + torch.randn_like(g) * sigma for g in target_gradients]
         
     if args.defense_sparse:
         print("\n[🛡️ Advanced Defense: Extreme Sparsification]")
@@ -172,6 +209,8 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="FedLoG Federated Learning & DLG Simulation")
+    parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')
+    parser.add_argument('--rounds', type=int, default=10, help='Number of FedAvg training rounds before the attack')
     parser.add_argument('--defense', action='store_true', help='Enable FedLoG defense mechanisms (Feature Scaling & Noise)')
     parser.add_argument('--adaptive_attack', action='store_true', help='Enable Adaptive DLG attack to jointly optimize the secret scaling factor')
     parser.add_argument('--defense_dp', action='store_true', help='Advanced: Enable Differential Privacy Noise on gradients')
