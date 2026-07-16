@@ -7,6 +7,7 @@
   fig1_image_mse.png       이미지 방어별 복원 MSE (mean±std)
   fig2_gnn_defense.png     GNN 공방 시나리오별 복원 코사인 (mean±std)
   fig3_gnn_trend.png       GNN 학습 라운드별 유출(코사인) 및 정확도 추세
+  fig4_fedlog_required.png FedLoG 공식식 기반 Cora 재검증 결과
 """
 import os, json
 import matplotlib
@@ -140,10 +141,61 @@ def fig_gnn_paired():
     print("saved fig3_gnn_paired.png")
 
 
+def fig_fedlog_required():
+    fr = R.get("fedlog_required", {}).get("attack", {})
+    order = [
+        "plain",
+        "fedlog_naive",
+        "fedlog_adaptive",
+        "noise_0.0001",
+        "noise_0.001",
+        "sparse_0.90",
+        "sparse_0.95",
+    ]
+    labels = [
+        "Plain",
+        "FedLoG\nnaive",
+        "FedLoG\nadaptive",
+        "Noise\n0.0001",
+        "Noise\n0.001",
+        "Sparse\n90%",
+        "Sparse\n95%",
+    ]
+    keys = [k for k in order if k in fr.get("1", {}) and k in fr.get("4", {})]
+    x = list(range(len(keys)))
+    w = 0.36
+    means1 = [m(fr["1"][k]["cosine"]) for k in keys]
+    stds1 = [sd(fr["1"][k]["cosine"]) for k in keys]
+    means4 = [m(fr["4"][k]["cosine"]) for k in keys]
+    stds4 = [sd(fr["4"][k]["cosine"]) for k in keys]
+    n = fr["1"][keys[0]]["cosine"]["n"] if keys else 0
+
+    fig, ax = plt.subplots(figsize=(9.0, 4.6))
+    ax.bar([i - w / 2 for i in x], means1, w, yerr=stds1, capsize=4,
+           color="#1565c0", edgecolor="#263238", linewidth=0.6,
+           error_kw={"elinewidth": 1, "ecolor": "#333"}, label="batch size 1")
+    ax.bar([i + w / 2 for i in x], means4, w, yerr=stds4, capsize=4,
+           color="#6a1b9a", edgecolor="#263238", linewidth=0.6,
+           error_kw={"elinewidth": 1, "ecolor": "#333"}, label="batch size 4")
+    ax.set_xticks(x, [labels[order.index(k)] for k in keys])
+    ax.set_ylim(0, 1.02)
+    ax.set_ylabel("Reconstruction cosine similarity (mean +/- std)")
+    ax.set_title(f"Fig. 4. FedLoG-equation Cora verification (n={n}, deduplicated)")
+    ax.axhline(0.5, color="#c62828", linestyle="--", linewidth=1, alpha=0.55)
+    ax.legend(loc="upper right", fontsize=9)
+    ax.grid(axis="y", linestyle=":", alpha=0.4)
+    ax.set_axisbelow(True)
+    fig.tight_layout()
+    fig.savefig(os.path.join(OUT, "fig4_fedlog_required.png"), bbox_inches="tight")
+    plt.close(fig)
+    print("saved fig4_fedlog_required.png")
+
+
 if __name__ == "__main__":
     fig_image()
     fig_gnn_defense()
     fig_gnn_paired()
+    fig_fedlog_required()
     # 오래된 단일실행 그림 제거(있다면)
     old = os.path.join(OUT, "fig2_gnn_cosine.png")
     if os.path.exists(old):
