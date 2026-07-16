@@ -2,3 +2,6 @@ __pycache__
 data/
 .claude
 .vscode
+.DS_Store
+# Local experiment environment
+.venv/

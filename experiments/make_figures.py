@@ -14,7 +14,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib import rcParams
 
-rcParams["font.family"] = "AppleGothic"
+rcParams["font.family"] = "DejaVu Sans"
 rcParams["axes.unicode_minus"] = False
 rcParams["savefig.dpi"] = 200
 rcParams["figure.dpi"] = 200
@@ -51,8 +51,8 @@ def fig_image():
     fig, ax = plt.subplots(figsize=(8, 4.3))
     bars = ax.bar(labs, means, yerr=stds, capsize=4, color=colors,
                   edgecolor="#37474f", linewidth=0.6, error_kw={"elinewidth": 1, "ecolor": "#444"})
-    ax.set_ylabel("복원 오차 MSE (mean ± std, n=%d)" % img[order[0]]["mse"]["n"], fontsize=11)
-    ax.set_title("그림 1. 이미지(CIFAR-100) 방어 기법별 복원 오차 — 멀티시드", fontsize=12, pad=10)
+    ax.set_ylabel("Reconstruction MSE (mean +/- std, n=%d)" % img[order[0]]["mse"]["n"], fontsize=11)
+    ax.set_title("Fig. 1. Reconstruction error per defense on images (CIFAR-100) - multi-seed", fontsize=12, pad=10)
     ax.axhline(base, color="#e53935", linestyle="--", linewidth=1.0, alpha=0.7)
     for b, v, s in zip(bars, means, stds):
         ax.text(b.get_x() + b.get_width() / 2, v + s + base * 0.05, f"{v:.4f}",
@@ -70,8 +70,8 @@ def fig_image():
 # ---------------------------------------------------------------------------
 def fig_gnn_defense():
     order = ["baseline", "fedlog", "adaptive", "dp", "sparse"]
-    labels = ["①\nBaseline\n(방어 없음)", "②\nFedLoG\n(스케일링)", "③\nAdaptive\n(조인트최적)",
-              "④\nDP\n(클립+노이즈)", "⑤\nSparse\n(95%)"]
+    labels = ["(1)\nBaseline\n(no defense)", "(2)\nFedLoG\n(scaling)", "(3)\nAdaptive\n(joint opt.)",
+              "(4)\nDP\n(clip+noise)", "(5)\nSparse\n(95%)"]
     dfn = R["gnn"]["defense"]
     keys = [k for k in order if k in dfn]
     means = [m(dfn[k]["cosine"]) for k in keys]
@@ -83,17 +83,17 @@ def fig_gnn_defense():
     fig, ax = plt.subplots(figsize=(8.4, 4.6))
     bars = ax.bar(labs, means, yerr=stds, capsize=4, color=colors,
                   edgecolor="#263238", linewidth=0.6, error_kw={"elinewidth": 1, "ecolor": "#333"})
-    ax.set_ylabel("복원 코사인 유사도 (mean ± std, n=%d)" % n, fontsize=10.5)
+    ax.set_ylabel("Reconstruction cosine similarity (mean +/- std, n=%d)" % n, fontsize=10.5)
     ax.set_ylim(min(0, min(m_ - s_ for m_, s_ in zip(means, stds)) - 0.05), 1.05)
-    ax.set_title("그림 2. 그래프(WikiCS) 공방 시나리오별 노드 특성 복원도 — 멀티시드", fontsize=12, pad=10)
+    ax.set_title("Fig. 2. Node-feature reconstruction per arms-race scenario on graph (WikiCS) - multi-seed", fontsize=11.5, pad=10)
     ax.axhline(0.5, color="#c62828", linestyle="--", linewidth=1.0, alpha=0.5)
     ax.axhline(0.0, color="#888", linewidth=0.8)
     for b, v, s in zip(bars, means, stds):
         ax.text(b.get_x() + b.get_width() / 2, v + s + 0.02, f"{v:.3f}",
                 ha="center", va="bottom", fontsize=9, fontweight="bold")
     from matplotlib.patches import Patch
-    ax.legend(handles=[Patch(facecolor="#c62828", label="유출 위험 (cos≥0.5)"),
-                       Patch(facecolor="#2e7d32", label="방어 성공 (cos<0.5)")],
+    ax.legend(handles=[Patch(facecolor="#c62828", label="Leakage risk (cos>=0.5)"),
+                       Patch(facecolor="#2e7d32", label="Defense success (cos<0.5)")],
               loc="upper right", fontsize=8.5, framealpha=0.9)
     ax.grid(axis="y", linestyle=":", alpha=0.4)
     ax.set_axisbelow(True)
@@ -109,8 +109,8 @@ def fig_gnn_defense():
 def fig_gnn_paired():
     pr = R["gnn"]["paired"]
     order = ["scaling_effect", "adaptive_break", "dp_defense", "sparse_defense"]
-    labels = ["특징 스케일링\n(무방어→방어)", "적대적 공격\n(순진→조인트최적)",
-              "DP 방어\n(적대적공격 대비)", "희소화 방어\n(적대적공격 대비)"]
+    labels = ["Feature scaling\n(no def.->def.)", "Adaptive attack\n(naive->joint opt.)",
+              "DP defense\n(vs. adaptive)", "Sparsify defense\n(vs. adaptive)"]
     keys = [k for k in order if k in pr]
     means = [pr[k]["mean"] for k in keys]
     stds = [pr[k]["std"] for k in keys]
@@ -123,13 +123,13 @@ def fig_gnn_paired():
     bars = ax.bar(labs, means, yerr=stds, capsize=4, color=colors,
                   edgecolor="#263238", linewidth=0.6, error_kw={"elinewidth": 1, "ecolor": "#333"})
     ax.axhline(0, color="#444", linewidth=1.0)
-    ax.set_ylabel("복원 코사인 변화량 Δ (시드 내 쌍체, n=%d)" % n, fontsize=10.5)
-    ax.set_title("그림 3. 같은 타겟 노드 기준 공방 단계별 복원도 변화(쌍체 분석)", fontsize=12, pad=10)
+    ax.set_ylabel("Change in reconstruction cosine, Delta (within-seed paired, n=%d)" % n, fontsize=10)
+    ax.set_title("Fig. 3. Change in reconstruction per arms-race stage for the same target node (paired analysis)", fontsize=11, pad=10)
     for b, v, s in zip(bars, means, stds):
         off = s + 0.03 if v >= 0 else -(s + 0.03)
         ax.text(b.get_x() + b.get_width() / 2, v + off, f"{v:+.3f}",
                 ha="center", va="bottom" if v >= 0 else "top", fontsize=9, fontweight="bold")
-    ax.text(0.015, 0.97, "Δ>0: 유출 증가(공격 우세)\nΔ<0: 유출 감소(방어 성공)",
+    ax.text(0.015, 0.97, "Delta>0: more leakage (attack wins)\nDelta<0: less leakage (defense wins)",
             transform=ax.transAxes, fontsize=8.5, va="top",
             bbox=dict(boxstyle="round", fc="#f5f5f5", ec="#ccc"))
     ax.grid(axis="y", linestyle=":", alpha=0.4)
