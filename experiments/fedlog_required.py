@@ -382,7 +382,7 @@ def run_attack_suite(
     syn_y,
     seed: int,
     rounds: int,
-    batch_sizes: list[int],
+    jobs: list[tuple[int, str]] | None,
     iterations: int,
     writer,
 ) -> None:
@@ -401,9 +401,15 @@ def run_attack_suite(
         ("sparse_0.95", True, Defense("sparse", 0.95), True, True),
     ]
 
-    for batch_size in batch_sizes:
+    if jobs is None:
+        jobs = [(batch_size, name) for batch_size in [1, 4] for name, *_ in scenarios]
+    job_set = set(jobs)
+
+    for batch_size in sorted({batch_size for batch_size, _ in job_set}):
         batch = select_batch(graph, seed * 7919 + batch_size, batch_size)
         for name, observed_syn, defense, attack_syn, adaptive in scenarios:
+            if (batch_size, name) not in job_set:
+                continue
             subgraph, mapping, _, sent, masks, raw = observed_update(
                 model,
                 graph,
@@ -528,22 +534,19 @@ def main() -> None:
             if args.phase in {"all", "utility"} and ("utility", seed) not in done:
                 run_utility_suite(graphs, syn_x, syn_y, seed, args.rounds, writer)
             if args.phase in {"all", "attack"}:
-                missing = [
-                    b
-                    for b in batch_sizes
-                    if any(
-                        ("attack", seed, b, scenario) not in done
-                        for scenario in [
-                            "plain",
-                            "fedlog_naive",
-                            "fedlog_adaptive",
-                            "noise_0.0001",
-                            "noise_0.001",
-                            "sparse_0.90",
-                            "sparse_0.95",
-                        ]
-                    )
-                ]
+                missing = []
+                for b in batch_sizes:
+                    for scenario in [
+                        "plain",
+                        "fedlog_naive",
+                        "fedlog_adaptive",
+                        "noise_0.0001",
+                        "noise_0.001",
+                        "sparse_0.90",
+                        "sparse_0.95",
+                    ]:
+                        if ("attack", seed, b, scenario) not in done:
+                            missing.append((b, scenario))
                 if missing:
                     run_attack_suite(
                         graphs, syn_x, syn_y, seed, args.rounds, missing, args.iterations, writer

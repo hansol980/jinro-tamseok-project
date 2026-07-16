@@ -106,6 +106,73 @@ def agg_image():
     return out
 
 
+def agg_fedlog_required():
+    rows = load_jsonl(os.path.join(RES, "fedlog_required.jsonl"))
+    deduped = []
+    seen = {}
+    for r in rows:
+        if r.get("kind") == "utility":
+            key = ("utility", r.get("seed"), r.get("scenario"))
+        elif r.get("kind") == "attack":
+            key = ("attack", r.get("seed"), r.get("batch_size"), r.get("scenario"))
+        else:
+            continue
+        seen[key] = r
+    deduped = list(seen.values())
+
+    out = {"attack": {}, "utility": {}, "rows": {"raw": len(rows), "dedup": len(deduped)}}
+    attack_order = [
+        "plain",
+        "fedlog_naive",
+        "fedlog_adaptive",
+        "noise_0.0001",
+        "noise_0.001",
+        "sparse_0.90",
+        "sparse_0.95",
+    ]
+    for batch_size in sorted({r["batch_size"] for r in deduped if r.get("kind") == "attack"}):
+        out["attack"][str(batch_size)] = {}
+        for scen in attack_order:
+            rs = [
+                r
+                for r in deduped
+                if r.get("kind") == "attack"
+                and r.get("batch_size") == batch_size
+                and r.get("scenario") == scen
+            ]
+            if not rs:
+                continue
+            out["attack"][str(batch_size)][scen] = {
+                "cosine": stat([r["cosine"] for r in rs]),
+                "nmse": stat([r["nmse"] for r in rs]),
+                "mse": stat([r["mse"] for r in rs]),
+                "topk_overlap": stat([r["topk_overlap"] for r in rs]),
+                "gradient_fidelity": stat([r["gradient_fidelity"] for r in rs]),
+                "gamma_mae": stat([r["gamma_mae"] for r in rs]),
+                "n": len(rs),
+            }
+
+    utility_order = [
+        "plain",
+        "fedlog_reproduction",
+        "noise_0.0001",
+        "noise_0.001",
+        "sparse_0.90",
+        "sparse_0.95",
+    ]
+    for scen in utility_order:
+        rs = [r for r in deduped if r.get("kind") == "utility" and r.get("scenario") == scen]
+        if not rs:
+            continue
+        out["utility"][scen] = {
+            "accuracy": stat([r["accuracy"] for r in rs]),
+            "macro_f1": stat([r["macro_f1"] for r in rs]),
+            "gamma_mean": stat([r["gamma_mean"] for r in rs]),
+            "n": len(rs),
+        }
+    return out
+
+
 def agg_audit():
     """원본 main_gnn.py 다중 실행 로그 파싱."""
     path = os.path.join(RES, "audit_gnn.txt")
@@ -132,7 +199,12 @@ def agg_audit():
 
 
 def main():
-    result = {"gnn": agg_gnn(), "image": agg_image(), "audit": agg_audit()}
+    result = {
+        "gnn": agg_gnn(),
+        "image": agg_image(),
+        "fedlog_required": agg_fedlog_required(),
+        "audit": agg_audit(),
+    }
     with open(os.path.join(RES, "results.json"), "w") as f:
         json.dump(result, f, indent=2, ensure_ascii=False)
 
@@ -156,6 +228,23 @@ def main():
     print(f"  {'config':12s} {'MSE':>20s} {'label복원률':>14s} {'fidelity':>16s}")
     for cfg, d in result["image"].items():
         print(f"  {cfg:12s} {fmt(d['mse'],6):>20s} {fmt(d['label_acc'],2):>14s} {fmt(d['fidelity'],3):>16s}  (n={d['n']})")
+
+    print("\n================ FedLoG 공식식 기반 Cora 재검증 (n=10, dedup) ================")
+    fr = result["fedlog_required"]
+    print(f"  rows raw={fr['rows']['raw']} dedup={fr['rows']['dedup']}")
+    for batch_size, scenarios in fr["attack"].items():
+        print(f"  -- batch_size={batch_size} --")
+        for scen, d in scenarios.items():
+            print(
+                f"  {scen:16s} cosine {fmt(d['cosine'],3):>15s} "
+                f"NMSE {fmt(d['nmse'],1):>15s} fidelity {fmt(d['gradient_fidelity'],3):>15s} (n={d['n']})"
+            )
+    print("  -- utility after 30 rounds --")
+    for scen, d in fr["utility"].items():
+        print(
+            f"  {scen:20s} acc {fmt(d['accuracy'],3):>15s} "
+            f"macro-F1 {fmt(d['macro_f1'],3):>15s} (n={d['n']})"
+        )
 
     print(f"\n저장: {os.path.join(RES, 'results.json')}")
 
